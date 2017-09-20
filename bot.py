@@ -2,19 +2,16 @@ import time
 import json
 import random
 import tinder_api as api
+import messages
 import datetime
 import re
 
-my_person_id = "59c0946bd134935f459928e6"
+MY_PERSON_ID = "59c203813d56b3bc35c1ba85"
 last_activity_date = ""
-greetings = [
-              "Hello {n}! Would you like to play one of my favorite games?",
-              "Hey {n}, I know a pretty fun game! Would you want to play?"
-            ]
-explains = [
-             "It is simple, I will think of a number between 1 and 25 and you have 5 guesses!"
-           ]
 
+MIN_NUM = 1
+MAX_NUM = 25
+NUM_GUESSES = 5
 
 class State:
     New = "New"
@@ -102,18 +99,24 @@ def update():
 
 def process_message(msg):
     # {"from": "xxx", "match_id": "xxxxx", "message": "Hello", "message_id": "xxx", "to": "xxx" }
-    if msg["from"] == my_person_id:
+    if msg["from"] == MY_PERSON_ID:
         return
+        
     user = Users[msg["match_id"]]
     state = user["game_state"]
     text = msg["message"].lower()
     
+    log("{} {}: {}".format("From", user["person_name"], text))
+    
     if state == State.New:
-        if any([x for x in ["yes", "yeah", "sure", "okay", "yup", "ya", "love"] if x in text]):
-            send_message(user, random.choice(explains))
+        if any([x for x in messages.affirmative if x in text]):
+            send_message(user, messages.how_to_play)
             user["game_state"] = State.Playing
             user["guess_history"] = []
-            user["secret_number"] = random.randint(1, 25)
+            user["secret_number"] = random.randint(MIN_NUM, MAX_NUM)
+        else:
+            send_message(user, messages.begs)
+    
     elif state == State.Playing:
         guesses = []
         temp = text
@@ -121,20 +124,15 @@ def process_message(msg):
         while search:
             guesses.append(int(search.group(1)))
             temp = temp[search.end():]
-            search = re.search('(\d+)', temp)
+            search = re.search('(-?\d+)', temp)
         if len(guesses) == 0:
-            send_message(user, "Go ahead and make a guess! between 1 and 25")
+            send_message(user, messages.make_guess)
+        elif len(guesses) > 1:
+            send_message(user, messages.too_many)
         if len(guesses) == 1:
             user["guess_history"].append(guesses[0])
-            if guesses[0] == user["secret_number"]:
-                send_message(user, "You got the secret number of {}!".format(user["secret_number"]))
-                user["game_state"] = State.Win
-            else:
-                if len(user["guess_history"]) == 4:
-                    send_message(user, "Sorry! you didnt get it. The number was {}!".format(user["secret_number"]))
-                    user["game_state"] = State.Lose
-                else:
-                    send_message(user, "You need to guess {} next time".format("higher" if user["secret_number"] < guesses[0] else "lower"))
+            process_last_guess(user)
+    
     elif state == State.Win:
         pass
     elif state == State.Lose:
@@ -144,17 +142,80 @@ def process_message(msg):
     else:
         user["game_state"] = State.Done
 
-def send_message(user, msg):
-    result = api.send_msg(user["match_id"], greeting)
-    print(dumps(result, "Result"))
+def process_last_guess(user):
+    history = user["guess_history"]
+    guess_count = len(history)
+    guesses_remain = NUM_GUESSES - guess_count
+    last_guess = history[-1]
+    secret = user["secret_number"]
+    result = "higher" if last_guess < secret else "lower"
+    lower_bound = MIN_NUM
+    upper_bound = MAX_NUM
+    
+    for guess in history[:-1]:
+        if guess < upper_bound and guess > secret:
+            upper_bound = guess-1
+        if guess > lower_bound and guess < secret:
+            lower_bound = guess+1
+    
+    if last_guess == secret:
+        #win
+        send_message(user, messages.win)
+        user["game_state"] = State.Win
+        return
+        
+    if last_guess < lower_bound or last_guess > upper_bound:
+        #bad guess
+        send_message(user, messages.dumb_guess, lower_bound=str(lower_bound), upper_bound=str(upper_bound))
+    else:
+        #results of last guess
+        send_message(user, messages.guess_result, result=result)
+        
+        if guesses_remain == 0:
+            #just made last guess
+            pass
+        if guesses_remain == 1:
+            #last guess
+            send_message(user, messages.last_guess)
+        elif guesses_remain == NUM_GUESSES // 2:
+            #taunt
+            send_message(user, messages.taunts)
+            
+    if guesses_remain == 0:
+            send_message(user, messages.lose)
+            user["game_state"] = State.Lose
 
-def send_greeting(user):
-    name = user["person_name"]
-    greeting = random.choice(greetings).format(n=name)
-    if user["is_super_like"]:
-        greeting = "Just how you super liked me, I super want to play a game! Do you want to play?"
-    result = api.send_msg(user["match_id"], greeting)
+def send_message(user, msg, lower_bound="", upper_bound="", result=""):
+    if type(msg) == list:
+        msg = random.choice(msg)
+    msg = populate_string_variables(user, msg, lower_bound=lower_bound, upper_bound=upper_bound, result=result)
+    print("To: {}; {}".format(user["person_name"], msg))
+    
+    log("{} {}: {}".format("To", user["person_name"], msg))
+    result = api.send_msg(user["match_id"], msg)
     print(dumps(result, "Result"))
+    pause(1, 3)
+    
+def send_greeting(user):
+    greeting = random.choice(messages.greetings)
+    if user["is_super_like"]:
+        greeting = "Just how you super liked me... I super want to play a game! Do you want to play?"
+    send_message(user, greeting)
+    
+def populate_string_variables(user, text, lower_bound="", upper_bound="", result=""):
+    text = text.replace("{name}", user["person_name"])
+    text = text.replace("{min_num}", str(MIN_NUM))
+    text = text.replace("{max_num}", str(MAX_NUM))
+    text = text.replace("{num_guesses}", str(NUM_GUESSES))
+    text = text.replace("{secret_number}", str(user["secret_number"]))
+    text = text.replace("{guess_count}", str(len(user["guess_history"])))
+    text = text.replace("{guesses_remain}", str(NUM_GUESSES-len(user["guess_history"])))
+    text = text.replace("{last_guess}", str(user["guess_history"][-1] if len(user["guess_history"]) > 0 else ""))
+    text = text.replace("{lower_bound}", str(lower_bound))
+    text = text.replace("{upper_bound}", str(upper_bound))
+    text = text.replace("{result}", result)
+    
+    return text
 
 def dumps(data, msg=None):
     output = ""
@@ -162,6 +223,9 @@ def dumps(data, msg=None):
         output = "{}\n".format(str(msg))
     output += "{}".format(json.dumps(data, indent=2, sort_keys=True)) if data else "{}"
     return output
+    
+def log(msg):
+    print(msg, file=open("log.txt", "a"))
         
 def save_state():
     print(dumps(Users), file=open("users.json", "w"))
