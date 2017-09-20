@@ -6,8 +6,8 @@ import requests
 import robobrowser
 import json
 
-username = """FB EMAIL HERE"""
-password = """FB PASSWORD HERE"""
+username = """FB Email Here"""
+password = """FB Password Here"""
 
 headers = {
     'app_version': '6.9.4',
