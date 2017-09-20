@@ -2,4 +2,4 @@ __pycache__/
 
 config.py
 print*
-log.txt
+log*

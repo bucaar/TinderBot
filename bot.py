@@ -20,9 +20,9 @@ class State:
     Lose = "Lose"
     Done = "Done"
 
-Users = {} 
-"""  
-{ 
+Users = {}
+"""
+{
   <match_id>: {
     "game_state": "xxx",
     "guess_history": [],
@@ -46,23 +46,33 @@ Users = {}
 
 def main():
     load_state()
-    update()
-    save_state()
-    
+    while True:
+        update()
+        save_state()
+        print("Running in 3 seconds.")
+        pause(3, 3)
+
 def update():
     global Users, last_activity_date
-    
+
     updates = api.get_updates(last_activity_date)
-            
+
     print(dumps(updates, "Updates"))
-    
+
     if "last_activity_date" in updates:
         last_activity_date = updates["last_activity_date"]
-        
+
+    if "blocks" in updates:
+        for block in updates["blocks"]:
+            if block in Users:
+                print("Delete {}".format(Users[block]["person_name"]))
+                log("Unmatched with {}".format(Users[block]["person_name"]))
+                del(Users[block])
+
     if "matches" in updates:
         for match in updates["matches"]:
             match_id = match["_id"]
-            
+
             if match_id in Users:
                 #We only need to update this user
                 user = Users[match_id]
@@ -72,16 +82,16 @@ def update():
                 user["match_id"] = match_id
                 user["is_super_like"] = match["is_super_like"]
                 user["messages"] = []
-                
+
                 person = match["person"]
                 user["person_id"] = person["_id"]
                 user["person_name"] = person["name"]
                 user["guess_history"] = []
                 user["secret_number"] = 0
                 user["game_state"] = State.New
-                
+
                 send_greeting(user)
-            
+
             #in either new or an update, we still update these things
             user["last_activity_date"] = match["last_activity_date"]
             messages = match["messages"]
@@ -93,7 +103,7 @@ def update():
                 msg["to"] = message["to"]
                 msg["message"] = message["message"]
                 user["messages"].append(msg)
-                
+
                 #interpret the message as a number guessing game
                 process_message(msg)
 
@@ -101,13 +111,13 @@ def process_message(msg):
     # {"from": "xxx", "match_id": "xxxxx", "message": "Hello", "message_id": "xxx", "to": "xxx" }
     if msg["from"] == MY_PERSON_ID:
         return
-        
+
     user = Users[msg["match_id"]]
     state = user["game_state"]
     text = msg["message"].lower()
-    
+
     log("{} {}: {}".format("From", user["person_name"], text))
-    
+
     if state == State.New:
         if any([x for x in messages.affirmative if x in text]):
             send_message(user, messages.how_to_play)
@@ -116,7 +126,7 @@ def process_message(msg):
             user["secret_number"] = random.randint(MIN_NUM, MAX_NUM)
         else:
             send_message(user, messages.begs)
-    
+
     elif state == State.Playing:
         guesses = []
         temp = text
@@ -132,7 +142,7 @@ def process_message(msg):
         if len(guesses) == 1:
             user["guess_history"].append(guesses[0])
             process_last_guess(user)
-    
+
     elif state == State.Win:
         pass
     elif state == State.Lose:
@@ -151,26 +161,26 @@ def process_last_guess(user):
     result = "higher" if last_guess < secret else "lower"
     lower_bound = MIN_NUM
     upper_bound = MAX_NUM
-    
+
     for guess in history[:-1]:
         if guess < upper_bound and guess > secret:
             upper_bound = guess-1
         if guess > lower_bound and guess < secret:
             lower_bound = guess+1
-    
+
     if last_guess == secret:
         #win
         send_message(user, messages.win)
         user["game_state"] = State.Win
         return
-        
+
     if last_guess < lower_bound or last_guess > upper_bound:
         #bad guess
         send_message(user, messages.dumb_guess, lower_bound=str(lower_bound), upper_bound=str(upper_bound))
     else:
         #results of last guess
         send_message(user, messages.guess_result, result=result)
-        
+
         if guesses_remain == 0:
             #just made last guess
             pass
@@ -180,7 +190,7 @@ def process_last_guess(user):
         elif guesses_remain == NUM_GUESSES // 2:
             #taunt
             send_message(user, messages.taunts)
-            
+
     if guesses_remain == 0:
             send_message(user, messages.lose)
             user["game_state"] = State.Lose
@@ -190,18 +200,18 @@ def send_message(user, msg, lower_bound="", upper_bound="", result=""):
         msg = random.choice(msg)
     msg = populate_string_variables(user, msg, lower_bound=lower_bound, upper_bound=upper_bound, result=result)
     print("To: {}; {}".format(user["person_name"], msg))
-    
+
     log("{} {}: {}".format("To", user["person_name"], msg))
     result = api.send_msg(user["match_id"], msg)
     print(dumps(result, "Result"))
     pause(1, 3)
-    
+
 def send_greeting(user):
     greeting = random.choice(messages.greetings)
     if user["is_super_like"]:
         greeting = "Just how you super liked me... I super want to play a game! Do you want to play?"
     send_message(user, greeting)
-    
+
 def populate_string_variables(user, text, lower_bound="", upper_bound="", result=""):
     text = text.replace("{name}", user["person_name"])
     text = text.replace("{min_num}", str(MIN_NUM))
@@ -214,7 +224,7 @@ def populate_string_variables(user, text, lower_bound="", upper_bound="", result
     text = text.replace("{lower_bound}", str(lower_bound))
     text = text.replace("{upper_bound}", str(upper_bound))
     text = text.replace("{result}", result)
-    
+
     return text
 
 def dumps(data, msg=None):
@@ -223,24 +233,24 @@ def dumps(data, msg=None):
         output = "{}\n".format(str(msg))
     output += "{}".format(json.dumps(data, indent=2, sort_keys=True)) if data else "{}"
     return output
-    
+
 def log(msg):
     print(msg, file=open("log.txt", "a"))
-        
+
 def save_state():
     print(dumps(Users), file=open("users.json", "w"))
     print(last_activity_date, file=open("latest_activity_date.txt", "w"), end="")
-    
+
 def load_state():
     global Users, last_activity_date
-    
+
     with open("users.json") as file:
         Users = json.loads('\n'.join(file.readlines()))
     with open("latest_activity_date.txt") as file:
         last_activity_date = ''.join(file.readlines())
 
 def pause(n, m):
-    if n >= m:
+    if n > m:
       return
     nap_length = (m-n) * random.random() + n
     print('Napping for {} seconds...'.format(nap_length))

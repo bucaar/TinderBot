@@ -59,7 +59,7 @@ lose         = [
                ]                              
                
                             
-affirmative  = ["yes", "yeah", "sure", "okay", "yup", "ya", "love", "why not", "game"]
+affirmative  = ["yes", "yeah", "ya", "yup", "sure", "okay", "ok", "love", "why not", "game", "play", "win", "will"]
 
 
 
