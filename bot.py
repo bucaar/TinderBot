@@ -49,8 +49,8 @@ def main():
     while True:
         update()
         save_state()
-        print("Running in 3 seconds.")
-        pause(3, 3)
+        print("Running again in 5 seconds.")
+        pause(5, 5)
 
 def update():
     global Users, last_activity_date
@@ -144,9 +144,17 @@ def process_message(msg):
             process_last_guess(user)
 
     elif state == State.Win:
-        pass
+        if any([x for x in messages.play_again if x in text]):
+            send_message(user, messages.play_again)
+            user["game_state"] = State.Playing
+            user["guess_history"] = []
+            user["secret_number"] = random.randint(MIN_NUM, MAX_NUM)
     elif state == State.Lose:
-        pass
+        if any([x for x in messages.play_again if x in text]):
+            send_message(user, messages.play_again)
+            user["game_state"] = State.Playing
+            user["guess_history"] = []
+            user["secret_number"] = random.randint(MIN_NUM, MAX_NUM)
     elif state == State.Done:
         pass
     else:

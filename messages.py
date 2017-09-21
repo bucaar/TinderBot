@@ -56,7 +56,11 @@ win          = [
                
 lose         = [
                  "You couldn't get the secret number in {num_guesses} guesses.  The number was {secret_number}!! Sorry.."
-               ]                              
+               ]  
+                 
+play_again   = [
+                 "Sure, we can play again! Ive got another number for you! Ready when you are!"
+               ]
                
                             
 affirmative  = ["yes", "yeah", "ya", "yup", "sure", "okay", "ok", "love", "why not", "game", "play", "win", "will"]
